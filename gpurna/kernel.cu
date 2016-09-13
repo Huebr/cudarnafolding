@@ -224,6 +224,7 @@ int main()
 		fprintf(stderr, "cudaDeviceReset failed!");
 		return 1;
 	}
+	free(filename);
 	system("pause");
 	return 0;
 }
@@ -231,6 +232,7 @@ int main()
 // Helper function for using CUDA to solve RNA prediction in parallel with objective function maximum number of bases
 cudaError_t solverRNA(const char *data, int *result, int id)
 {
+
 	int *dev_data = 0;//data in device
 	int *dev_memo = 0;//memotable in device
 	int *host_memo = 0;//memotable in host
@@ -245,6 +247,11 @@ cudaError_t solverRNA(const char *data, int *result, int id)
 	char solutionName[MAX_FILENAME_SIZE];
 	const int size_memo = size*size;
 	cudaError_t cudaStatus;
+
+	//create events to record time elapsed
+	cudaEvent_t start, stop;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
 
 	//convert string to array of integers
 	host_data = (int*)malloc(size*sizeof(int));
@@ -305,22 +312,28 @@ cudaError_t solverRNA(const char *data, int *result, int id)
 	}
 
 	// Launch a kernel on the GPU with one thread for each element.
+	cudaEventRecord(start);
 	solverKernel << < 4, 1024 >> > (dev_data, dev_memo, dev_arrayIn, dev_arrayOut, goalValue, size);
-
 	// Check for any errors launching the kernel
 	cudaStatus = cudaGetLastError();
 	if (cudaStatus != cudaSuccess) {
 		fprintf(stderr, "solverKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
 		goto Error;
 	}
+	cudaEventRecord(stop);
+	cudaEventSynchronize(stop);
+	float milliseconds = 0.0f;
+	cudaEventElapsedTime(&milliseconds, start, stop);
+	printf("solve in %f ms.\n", milliseconds);
+
 
 	// cudaDeviceSynchronize waits for the kernel to finish, and returns
 	// any errors encountered during the launch.
-	cudaStatus = cudaDeviceSynchronize();
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching solverKernel!\n", cudaStatus);
-		goto Error;
-	}
+	//cudaStatus = cudaDeviceSynchronize();
+	//if (cudaStatus != cudaSuccess) {
+		//fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching solverKernel!\n", cudaStatus);
+		//goto Error;
+	//}
 
 	// Copy output vector from GPU buffer to host memory.
 	cudaStatus = cudaMemcpy(host_memo, dev_memo, size_memo*sizeof(int), cudaMemcpyDeviceToHost);
